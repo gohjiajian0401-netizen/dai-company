@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>代公司订单管理系统</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f0f4f8; }
+  h1,h2,h3 { margin:0 0 10px 0; }
+  #app { padding: 20px; max-width:1200px; margin:auto; }
+  input, select, button { margin: 4px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
+  button { cursor: pointer; background-color: #4caf50; color:white; border:none; transition:0.2s; }
+  button:hover { background-color: #45a049; }
+  table { border-collapse: collapse; width: 100%; margin-top:10px; background:white; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align:center; word-break: break-word; }
+  th { background:#0077b6; color:white; }
+  .section { background:white; padding:15px; margin-bottom:20px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+  .flex { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .flex input, .flex select { flex:1; min-width:120px; }
+  .logout-btn { background-color:#ff4d4d; }
+  .logout-btn:hover { background-color:#e04343; }
+  /* 响应式调整 */
+  @media (max-width: 768px){
+    .flex { flex-direction: column; }
+    .flex input, .flex select, .flex button { width: 100%; }
+    table, thead, tbody, th, td, tr { display:block; }
+    th { text-align:left; background:#0077b6; color:white; padding:6px; }
+    td { text-align:left; padding:6px; border:none; border-bottom:1px solid #ccc; }
+    tr { margin-bottom:10px; background:#f9f9f9; border-radius:4px; padding:5px; }
+  }
+</style>
+</head>
+<body>
+
+<h1 style="text-align:center; padding:10px; background:#0077b6; color:white;">代公司订单管理系统</h1>
+<div id="app"></div>
+
+<script>
+// ===== LocalStorage 工具 =====
+const getUsers = () => JSON.parse(localStorage.getItem("users") || "[]");
+const setUsers = (users) => localStorage.setItem("users", JSON.stringify(users));
+const getOrders = () => JSON.parse(localStorage.getItem("orders") || "[]");
+const setOrders = (orders) => localStorage.setItem("orders", JSON.stringify(orders));
+
+// ===== 初始化老板账号 =====
+const usersWithoutBoss = getUsers().filter(u => u.role !== "老板");
+usersWithoutBoss.push({email:"jj", password:"666", role:"老板"});
+setUsers(usersWithoutBoss);
+
+let currentUser = null;
+const appDiv = document.getElementById("app");
+
+// ===== 页面渲染 =====
+function render(){
+  appDiv.innerHTML='';
+  if(!currentUser) renderLogin();
+  else if(currentUser.role==="老板") renderBossDashboard();
+  else renderStaffDashboard();
+}
+
+// ===== 登录页 =====
+function renderLogin(){
+  const div=document.createElement('div');
+  div.className='section';
+  div.innerHTML=`
+    <h2>登录</h2>
+    <div class="flex">
+      <input id="loginEmail" placeholder="邮箱/ID">
+      <input id="loginPassword" type="password" placeholder="密码">
+      <button id="loginBtn">登录</button>
+    </div>
+  `;
+  appDiv.appendChild(div);
+
+  document.getElementById('loginBtn').onclick=()=>{
+    const email=document.getElementById('loginEmail').value.trim();
+    const password=document.getElementById('loginPassword').value;
+    const u=getUsers().find(u=>u.email===email && u.password===password);
+    if(u){ currentUser=u; render(); }
+    else alert("ID 或密码错误！");
+  };
+}
+
+// ===== 老板后台 =====
+function renderBossDashboard(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="flex"><h2>老板后台</h2><button class="logout-btn" id="logoutBtn">退出登录</button></div>
+    
+    <div class="section">
+      <h3>员工管理</h3>
+      <div class="flex">
+        <input id="staffEmail" placeholder="员工邮箱">
+        <input id="staffPassword" placeholder="初始密码">
+        <button id="createStaffBtn">创建员工</button>
+      </div>
+      <table>
+        <thead><tr><th>邮箱</th><th>角色</th><th>二维码</th><th>操作</th></tr></thead>
+        <tbody id="employeeTable"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>新增订单</h3>
+      <div class="flex">
+        <input id="buyerName" placeholder="买家姓名">
+        <input id="buyerPhone" placeholder="买家电话">
+        <input id="buyerAddress" placeholder="买家地址">
+        <input id="buyerEmail" placeholder="买家邮箱">
+      </div>
+      <div class="flex">
+        <input id="item" placeholder="商品">
+        <input id="amount" placeholder="金额">
+        <select id="paymentStatus"><option>未付款</option><option>已付款</option></select>
+        <input id="fundSource" placeholder="资金来源">
+        <input id="employeeTNG" placeholder="员工TNG">
+        <button id="addOrderBtn">新增订单</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>订单管理</h3>
+      <div class="flex">
+        <input id="searchBuyer" placeholder="搜索买家姓名或电话">
+        <button id="searchBtn">搜索</button>
+        <button id="exportBtn">导出 CSV</button>
+      </div>
+      <table>
+        <thead><tr><th>买家</th><th>电话</th><th>地址</th><th>邮箱</th><th>商品</th><th>金额</th><th>状态</th><th>资金来源</th><th>提交员工</th><th>TNG</th><th>操作</th></tr></thead>
+        <tbody id="orderTable"></tbody>
+      </table>
+      <h3>总收入: RM <span id="totalIncome">0</span></h3>
+    </div>
+
+    <div class="section">
+      <h3>修改老板密码</h3>
+      <div class="flex">
+        <input id="newBossPassword" placeholder="新密码">
+        <button id="changeBossPwdBtn">修改密码</button>
+      </div>
+    </div>
+  `;
+  appDiv.appendChild(div);
+
+  document.getElementById('logoutBtn').onclick=()=>{currentUser=null; render();};
+
+  // 员工管理
+  document.getElementById('createStaffBtn').onclick=()=>{
+    const email=document.getElementById('staffEmail').value.trim();
+    const password=document.getElementById('staffPassword').value;
+    if(!email||!password) return alert("请输入邮箱和密码！");
+    const users=getUsers();
+    if(users.some(u=>u.email===email)) return alert("员工已存在！");
+    users.push({email,password,role:"员工"});
+    setUsers(users);
+    document.getElementById('staffEmail').value='';
+    document.getElementById('staffPassword').value='';
+    renderEmployees();
+  };
+
+  function renderEmployees(){
+    const tbody=document.getElementById('employeeTable');
+    tbody.innerHTML='';
+    getUsers().filter(u=>u.role==="员工").forEach(u=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${u.email}</td><td>${u.role}</td><td>${u.qr || ''}</td>
+        <td>
+          <button onclick="deleteEmployee('${u.email}')">删除</button>
+          <button onclick="resetEmployeePassword('${u.email}')">重置密码</button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  window.deleteEmployee=(email)=>{
+    const users=getUsers().filter(u=>u.email!==email);
+    setUsers(users);
+    renderEmployees();
+  }
+
+  window.resetEmployeePassword=(email)=>{
+    const pwd=prompt("请输入 "+email+" 的新密码");
+    if(!pwd) return;
+    const users=getUsers();
+    const user=users.find(u=>u.email===email);
+    user.password=pwd;
+    setUsers(users);
+    alert("密码已重置！");
+  }
+
+  renderEmployees();
+
+  // 新增订单
+  document.getElementById('addOrderBtn').onclick=()=>{
+    const buyerName=document.getElementById('buyerName').value;
+    const buyerPhone=document.getElementById('buyerPhone').value;
+    const buyerAddress=document.getElementById('buyerAddress').value;
+    const buyerEmail=document.getElementById('buyerEmail').value;
+    const item=document.getElementById('item').value;
+    const amount=document.getElementById('amount').value;
+    const paymentStatus=document.getElementById('paymentStatus').value;
+    const fundSource=document.getElementById('fundSource').value;
+    const employeeTNG=document.getElementById('employeeTNG').value;
+    if(!buyerName||!buyerPhone||!item||!amount) return alert("请填写必填信息！");
+    const orders=getOrders();
+    orders.push({buyerName,buyerPhone,buyerAddress,buyerEmail,item,amount,paymentStatus,fundSource,employee:currentUser.email,TNG:employeeTNG,id:Date.now()});
+    setOrders(orders);
+    renderOrders(getOrders());
+  };
+
+  function renderOrders(list){
+    const tbody=document.getElementById('orderTable');
+    tbody.innerHTML='';
+    let total=0;
+    list.forEach(o=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${o.buyerName}</td><td>${o.buyerPhone}</td><td>${o.buyerAddress}</td><td>${o.buyerEmail}</td><td>${o.item}</td><td>${o.amount}</td><td>${o.paymentStatus}</td><td>${o.fundSource}</td><td>${o.employee}</td><td>${o.TNG||""}</td>
+        <td><button onclick="deleteOrder(${o.id})">删除</button></td>`;
+      tbody.appendChild(tr);
+      if(o.paymentStatus==="已付款") total+=parseFloat(o.amount)||0;
+    });
+    document.getElementById('totalIncome').innerText=total.toFixed(2);
+  }
+
+  window.deleteOrder=(id)=>{
+    if(!confirm("确定删除该订单吗？")) return;
+    const orders=getOrders().filter(o=>o.id!==id);
+    setOrders(orders);
+    renderOrders(getOrders());
+  }
+
+  renderOrders(getOrders());
+
+  document.getElementById('searchBtn').onclick=()=>{
+    const key=document.getElementById('searchBuyer').value.trim().toLowerCase();
+    if(!key) return renderOrders(getOrders());
+    const filtered=getOrders().filter(o=>o.buyerName.toLowerCase().includes(key)||o.buyerPhone.includes(key));
+    renderOrders(filtered);
+  };
+
+  document.getElementById('exportBtn').onclick=()=>{
+    const orders=getOrders();
+    if(!orders.length) return alert("没有订单可导出！");
+    let csv="买家姓名,电话,地址,邮箱,商品,金额,状态,资金来源,员工,TNG\n";
+    orders.forEach(o=>{
+      csv+=`"${o.buyerName}","${o.buyerPhone}","${o.buyerAddress}","${o.buyerEmail}","${o.item}","${o.amount}","${o.paymentStatus}","${o.fundSource}","${o.employee}","${o.TNG||''}"\n`;
+    });
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download="orders.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  document.getElementById('changeBossPwdBtn').onclick=()=>{
+    const newPwd=document.getElementById('newBossPassword').value;
+    if(!newPwd) return alert("请输入新密码！");
+    const users=getUsers();
+    const boss=users.find(u=>u.email===currentUser.email);
+    boss.password=newPwd;
+    setUsers(users);
+    alert("密码修改成功！");
+    document.getElementById('newBossPassword').value='';
+  };
+}
+
+// ===== 员工后台 =====
+function renderStaffDashboard(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="flex"><h2>员工后台</h2><button class="logout-btn" id="logoutBtn">退出登录</button></div>
+
+    <div class="section">
+      <h3>新增订单</h3>
+      <div class="flex">
+        <input id="buyerName" placeholder="买家姓名">
+        <input id="buyerPhone" placeholder="买家电话">
+        <input id="buyerAddress" placeholder="买家地址">
+        <input id="buyerEmail" placeholder="买家邮箱">
+      </div>
+      <div class="flex">
+        <input id="item" placeholder="商品">
+        <input id="amount" placeholder="金额">
+        <select id="paymentStatus"><option>未付款</option><option>已付款</option></select>
+        <input id="fundSource" placeholder="资金来源">
+        <input id="employeeTNG" placeholder="TNG">
+        <button id="addOrderBtn">新增订单</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>我的收款二维码</h3>
+      <div class="flex">
+        <input id="employeeQRCode" placeholder="输入收款二维码">
+        <button id="saveQRCodeBtn">保存二维码</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>修改密码</h3>
+      <div class="flex">
+        <input id="newPassword" placeholder="新密码">
+        <button id="changePwdBtn">修改密码</button>
+      </div>
+    </div>
+  `;
+  appDiv.appendChild(div);
+
+  document.getElementById('logoutBtn').onclick=()=>{currentUser=null; render();};
+
+  document.getElementById('addOrderBtn').onclick=()=>{
+    const buyerName=document.getElementById('buyerName').value;
+    const buyerPhone=document.getElementById('buyerPhone').value;
+    const buyerAddress=document.getElementById('buyerAddress').value;
+    const buyerEmail=document.getElementById('buyerEmail').value;
+    const item=document.getElementById('item').value;
+    const amount=document.getElementById('amount').value;
+    const paymentStatus=document.getElementById('paymentStatus').value;
+    const fundSource=document.getElementById('fundSource').value;
+    const employeeTNG=document.getElementById('employeeTNG').value;
+    if(!buyerName||!buyerPhone||!item||!amount) return alert("请填写必填信息！");
+    const orders=getOrders();
+    orders.push({buyerName,buyerPhone,buyerAddress,buyerEmail,item,amount,paymentStatus,fundSource,employee:currentUser.email,TNG:employeeTNG,id:Date.now()});
+    setOrders(orders);
+    alert("订单已新增！");
+  };
+
+  document.getElementById('saveQRCodeBtn').onclick = () => {
+    const qr = document.getElementById('employeeQRCode').value.trim();
+    const users = getUsers();
+    const emp = users.find(u => u.email === currentUser.email);
+    emp.qr = qr;
+    setUsers(users);
+    alert("二维码已保存！");
+  };
+
+  document.getElementById('changePwdBtn').onclick=()=>{
+    const newPwd=document.getElementById('newPassword').value;
+    if(!newPwd) return alert("请输入新密码！");
+    const users=getUsers();
+    const emp=users.find(u=>u.email===currentUser.email);
+    emp.password=newPwd;
+    setUsers(users);
+    alert("密码修改成功！");
+  };
+}
+
+// ===== 初始渲染 =====
+render();
+</script>
+
+</body>
+</html>
